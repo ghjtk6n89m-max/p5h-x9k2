@@ -94,7 +94,6 @@
     const PORT = 9021;
 
     const PAYLOADS = [
-      { name: 'elfldr',       file: 'payloads/elfldr-ps5.elf'         },
       { name: 'EtaHEN 2.58', file: 'payloads/etaHEN-2.58.bin'        },
       { name: 'kstuff',       file: 'payloads/kstuff.elf'             },
       { name: 'ShadowMount+', file: 'payloads/shadowmountplus.elf'    },
@@ -154,6 +153,8 @@
 
       PAYLOADS.forEach((_, i) => setItemState(i, 'wait'));
 
+      let success = true;
+
       for (let i = 0; i < PAYLOADS.length; i++) {
         const p = PAYLOADS[i];
         setItemState(i, 'active');
@@ -167,11 +168,12 @@
         } catch (err) {
           setItemState(i, 'error');
           setStatus(`❌ Erro em ${p.name}: ${err.message}`, 'err');
+          success = false;
           break;
         }
       }
 
-      setStatus('✅ Todos os payloads injetados!', 'ok');
+      if (success) setStatus('✅ Todos os payloads injetados!', 'ok');
       injectBtn.disabled = false;
       running = false;
     }
