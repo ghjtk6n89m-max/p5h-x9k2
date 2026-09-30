@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PS5 Payload Host</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d0d0d;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+
+    h1 { font-size: 28px; margin-bottom: 6px; }
+    .subtitle { color: #888; margin-bottom: 40px; font-size: 14px; }
+
+    .inject-btn {
+      padding: 20px 48px;
+      font-size: 22px;
+      background: #0070d1;
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      cursor: pointer;
+      margin-bottom: 32px;
+      transition: background 0.15s;
+    }
+    .inject-btn:hover { background: #005faa; }
+    .inject-btn:disabled { background: #333; cursor: default; }
+
+    .payload-list {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .payload-item {
+      padding: 12px 18px;
+      background: #1a1a2e;
+      border: 2px solid #333;
+      border-radius: 10px;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .payload-item .icon { font-size: 18px; min-width: 24px; text-align: center; }
+    .payload-item.done   { border-color: #4caf50; }
+    .payload-item.active { border-color: #0070d1; background: #0a2a4a; }
+    .payload-item.error  { border-color: #f44336; }
+
+    #status {
+      font-size: 15px;
+      color: #aaa;
+      min-height: 24px;
+      text-align: center;
+    }
+    #status.ok  { color: #4caf50; }
+    #status.err { color: #f44336; }
+
+    .hint {
+      margin-top: 28px;
+      color: #444;
+      font-size: 13px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🎮 Payload Host</h1>
+  <p class="subtitle">FW 13.4 — R2 ou X para injetar tudo</p>
+
+  <button class="inject-btn" id="injectBtn" onclick="injectAll()">▶ Injetar Tudo</button>
+
+  <div class="payload-list" id="list"></div>
+
+  <div id="status">Aguardando...</div>
+
+  <p class="hint">R2 ou ❎ X também injeta</p>
+
+  <script>
+    const PORT = 9021;
+
+    const PAYLOADS = [
+      { name: 'elfldr',        file: 'payloads/elfldr.bin'          },
+      { name: 'EtaHEN',        file: 'payloads/etahen.bin'          },
+      { name: 'kstufflite',    file: 'payloads/kstufflite.bin'      },
+      { name: 'ShadowMount+',  file: 'payloads/shadowmountplus.bin' },
+      { name: 'PKG Manager',   file: 'payloads/pkgmanager.bin'      },
+      { name: 'ps5upload',     file: 'payloads/ps5upload.bin'       },
+    ];
+
+    const statusEl  = document.getElementById('status');
+    const listEl    = document.getElementById('list');
+    const injectBtn = document.getElementById('injectBtn');
+
+    PAYLOADS.forEach((p, i) => {
+      const div = document.createElement('div');
+      div.className = 'payload-item';
+      div.id = `item-${i}`;
+      div.innerHTML = `<span class="icon">⏳</span> ${p.name}`;
+      listEl.appendChild(div);
+    });
+
+    function setStatus(msg, type = '') {
+      statusEl.textContent = msg;
+      statusEl.className = type;
+    }
+
+    function setItemState(index, state) {
+      const el = document.getElementById(`item-${index}`);
+      const icons = { active: '🔄', done: '✅', error: '❌', wait: '⏳' };
+      el.className = `payload-item ${state === 'wait' ? '' : state}`;
+      el.querySelector('.icon').textContent = icons[state] ?? '⏳';
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function sendPayload(path) {
+      return new Promise((resolve, reject) => {
+        fetch(path)
+          .then(res => {
+            if (!res.ok) throw new Error(`Arquivo não encontrado: ${path}`);
+            return res.arrayBuffer();
+          })
+          .then(buf => {
+            const ws = new WebSocket(`ws://localhost:${PORT}`);
+            ws.binaryType = 'arraybuffer';
+            ws.onopen  = () => { ws.send(buf); ws.close(); resolve(); };
+            ws.onerror = () => reject(new Error('WebSocket falhou'));
+          })
+          .catch(reject);
+      });
+    }
+
+    let running = false;
+
+    async function injectAll() {
+      if (running) return;
+      running = true;
+      injectBtn.disabled = true;
+
+      PAYLOADS.forEach((_, i) => setItemState(i, 'wait'));
+
+      for (let i = 0; i < PAYLOADS.length; i++) {
+        const p = PAYLOADS[i];
+        setItemState(i, 'active');
+        setStatus(`Injetando ${p.name}...`);
+
+        try {
+          await sendPayload(p.file);
+          setItemState(i, 'done');
+          setStatus(`✅ ${p.name} injetado!`, 'ok');
+          if (i < PAYLOADS.length - 1) await sleep(800);
+        } catch (err) {
+          setItemState(i, 'error');
+          setStatus(`❌ Erro em ${p.name}: ${err.message}`, 'err');
+          break;
+        }
+      }
+
+      setStatus('✅ Todos os payloads injetados!', 'ok');
+      injectBtn.disabled = false;
+      running = false;
+    }
+
+    // Gamepad — R2 (índice 7) ou X (índice 0)
+    let r2Was = false;
+    let xWas  = false;
+
+    setInterval(() => {
+      const gp = navigator.getGamepads?.()[0];
+      if (!gp) return;
+
+      const r2 = gp.buttons[7]?.pressed;
+      const x  = gp.buttons[0]?.pressed;
+
+      if ((r2 && !r2Was) || (x && !xWas)) injectAll();
+
+      r2Was = r2;
+      xWas  = x;
+    }, 100);
+  </script>
+</body>
+</html>
